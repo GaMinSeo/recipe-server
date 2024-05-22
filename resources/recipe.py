@@ -1,18 +1,20 @@
 from flask import request
+from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_restful import Resource
 
 from mysql_connection import get_connection
 from mysql.connector import Error
 
 class RecipePublishResource(Resource) : 
+    @jwt_required()
     def put(self, recipe_id):
-        
+        user_id = get_jwt_identity()
         try :
             connection = get_connection()
             query = '''update recipe
                     set is_publish = 1
-                    where id = %s;'''
-            record = (recipe_id,)
+                    where id = %s and user_id = %s;'''
+            record = (recipe_id, user_id)
             cursor = connection.cursor()
             cursor.execute(query, record)
             connection.commit()
@@ -28,15 +30,15 @@ class RecipePublishResource(Resource) :
 
         return {'result' : 'success'}
 
-
+    @jwt_required()
     def delete(self, recipe_id):
-        
+        user_id = get_jwt_identity()
         try :
             connection = get_connection()
             query = '''update recipe
                     set is_publish = 0
-                    where id =  %s;'''
-            record = (recipe_id,)
+                    where id =  %s and user_id = %s;'''
+            record = (recipe_id,user_id)
             cursor = connection.cursor()
             cursor.execute(query, record)
             connection.commit()
@@ -53,12 +55,15 @@ class RecipePublishResource(Resource) :
         return {'result' : 'success'}
 
 class RecipeResource(Resource) :
+    
+    @jwt_required()
     def get(self, recipe_id) :
 
         # 1. 클라이언트로부터 데이터를 받는다.
-
+        
         print(recipe_id)
 
+        user_id = get_jwt_identity()
         # 2. DB로 부터 데이터를 가져온다.
         try:
             
@@ -97,9 +102,7 @@ class RecipeResource(Resource) :
                 connection.close()
             return {'result': 'fail',
                     'error': str(e)}, 500
-
-
-
+        
         
         # 3. 응답할 데이터를 json 으로 만든다
         i = 0
@@ -109,21 +112,24 @@ class RecipeResource(Resource) :
             i = i + 1
 
         if len(result_list) == 1:
-            return {'item' : result_list[0],
-                    'result' : 'success'}
+            # 2-2. 내 레시피인지 확인한다.
+            if result_list[0]['user_id'] == user_id :
+                return {'item' : result_list[0],
+                        'result' : 'success'}
+            else :
+                return {'result': 'fail'}, 401
         else :
             return {'result': 'fail',
-                    'error': '해당 아이디는 존재하지 않습니다.'}   
-
-
+                    'error': '해당 아이디는 존재하지 않습니다.'}
+    
+    @jwt_required()
     def put(self,recipe_id):
 
         # 1. 클라이언트로 부터 데이터를 받아온다.
         print(recipe_id)
 
         data = request.get_json()
-        print(data)
-
+        user_id = get_jwt_identity()
         # 2. DB 에 수정한다.
         try:
             connection = get_connection()
@@ -134,13 +140,14 @@ class RecipeResource(Resource) :
                     num_of_servings = %s,
                     cook_time = %s,
                     directions = %s
-                where id = %s;'''
+                where id = %s and user_id = %s;'''
             record = (data['name'],
-                      data['description'],
-                      data['num_of_servings'],
+                        data['description'],
+                        data['num_of_servings'],
                         data['cook_time'],
                         data['directions'],
-                        recipe_id)
+                        recipe_id,
+                        user_id)
 
             cursor = connection.cursor()
             cursor.execute(query, record)
@@ -160,12 +167,16 @@ class RecipeResource(Resource) :
                     'error' : str(e)}, 500
         
         return {'result' : 'success'}
-
+    
+    @jwt_required()
     def delete(self, recipe_id) :
+
+        user_id = get_jwt_identity()
+
         try:
             connection = get_connection()
-            query = '''delete from recipe where id = %s;'''
-            record = (recipe_id,)
+            query = '''delete from recipe where id = %s and user_id = %s;'''
+            record = (recipe_id, user_id)
             cursor = connection.cursor(dictionary=True)
             cursor.execute(query, record)
             result_list = cursor.fetchall()
@@ -185,11 +196,17 @@ class RecipeResource(Resource) :
 
 class RecipeListResource(Resource):
     
+    # JWT 토큰이 헤더에 있어야지만 이 API를 실행할수 있다는 뜻
+    # JWT 토큰이 필수!!! == 로그인 한 유저만 이 API 실행 가능.
+    @jwt_required()
     def post(self) :
 
         # 1. 클라이언트가 보내준 데이터가 있으면 그 데이터를 받아준다.
         
         data = request.get_json()
+
+        # 1-1. 헤더의 JWT 토큰이 있으면, 토큰 정보도 받는다.
+        user_id = get_jwt_identity()
 
         # 2. 이 정보를 DB에 저장한다.
         try:
@@ -203,7 +220,7 @@ class RecipeListResource(Resource):
                         (%s, %s, %s, %s, %s, %s);'''
             
             ### 3. 쿼리에 매칭되는 변수 처리 => 튜.플.로.
-            record = (data['user_id'], data['name'], data['description'], data['num_of_servings'], data['cook_time'], data['directions'])
+            record = (user_id, data['name'], data['description'], data['num_of_servings'], data['cook_time'], data['directions'])
 
             ### 4. 커서를 가져온다.
             cursor = connection.cursor()
@@ -226,13 +243,16 @@ class RecipeListResource(Resource):
             return {'result' : 'fail', 'error' : str(e)}, 500
         
         return {'result' : 'success'}
-    
+    @jwt_required()
     def get(self) :
         
         # 1. 클라이언트가 보낸 데이터가 있으면
         #    받아준다.
         offset = request.args['offset']
         limit = request.args['limit']
+
+        # 1-2 JWT 토큰에서 유저아이디를 가져온다
+        user_id = get_jwt_identity()
         
         # 2. DB로 부터 데이터를 가져온다.
         try :
@@ -243,14 +263,15 @@ class RecipeListResource(Resource):
             query = '''
                     select *
                     from recipe
+                    where user_id = %s
                     limit '''+offset+''','''+limit+''' ;
                     '''
-            # record = ()
+            record = (user_id,)
 
             # 딕셔너리 트루 파라미터를 설정하여 데이터를 딕셔너리로 받는다
             cursor = connection.cursor(dictionary=True)
         
-            cursor.execute(query)
+            cursor.execute(query, record)
 
             result_list = cursor.fetchall()
 
