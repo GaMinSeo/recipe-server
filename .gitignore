@@ -1,3 +1,6 @@
+# 필수로 넣어준다
+config.py/
+node_modules/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
