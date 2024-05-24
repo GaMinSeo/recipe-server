@@ -295,5 +295,5 @@ class RecipeListResource(Resource):
 
             print(result_list)
 
-        return {'item' : result_list, 'count' : len(result_list), 'result' : 'success' }
+        return {'result' : 'success', 'item' : result_list, 'count' : len(result_list)}
 
